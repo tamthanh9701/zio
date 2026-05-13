@@ -19,7 +19,7 @@ package zio.test
 import zio.Random._
 import zio.stacktracer.TracingImplicits.disableAutoTrace
 import zio.stream.ZStream
-import zio.{Chunk, NonEmptyChunk, Random, Trace, UIO, URIO, ZIO, Zippable}
+import zio.{Chunk, FiberRef, NonEmptyChunk, Random, Trace, UIO, URIO, Unsafe, ZIO, Zippable}
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -32,6 +32,9 @@ import scala.math.Numeric.DoubleIsFractional
  * environment `R`. Generators may be random or deterministic.
  */
 final case class Gen[-R, +A](sample: ZStream[R, Nothing, Sample[R, A]]) { self =>
+  private[test] def samples(n: Option[Int])(implicit trace: Trace): ZStream[R, Nothing, Sample[R, A]] =
+    ZStream.scoped[R](Gen.deterministic.locallyScoped(n.isEmpty)) *>
+      n.fold(sample)(sample.forever.take(_))
 
   /**
    * A symbolic alias for `concat`.
@@ -147,20 +150,20 @@ final case class Gen[-R, +A](sample: ZStream[R, Nothing, Sample[R, A]]) { self =
    * Runs the generator and collects all of its values in a list.
    */
   def runCollect(implicit trace: Trace): ZIO[R, Nothing, List[A]] =
-    sample.map(_.value).runCollect.map(_.toList)
+    samples(None).map(_.value).runCollect.map(_.toList)
 
   /**
    * Repeatedly runs the generator and collects the specified number of values
    * in a list.
    */
   def runCollectN(n: Int)(implicit trace: Trace): ZIO[R, Nothing, List[A]] =
-    sample.map(_.value).forever.take(n.toLong).runCollect.map(_.toList)
+    samples(Some(n)).map(_.value).runCollect.map(_.toList)
 
   /**
    * Runs the generator returning the first value of the generator.
    */
   def runHead(implicit trace: Trace): ZIO[R, Nothing, Option[A]] =
-    sample.map(_.value).runHead
+    samples(Some(1)).map(_.value).runHead
 
   /**
    * Composes this generator with the specified generator to create a cartesian
@@ -180,6 +183,13 @@ final case class Gen[-R, +A](sample: ZStream[R, Nothing, Sample[R, A]]) { self =
 }
 
 object Gen extends GenZIO with FunctionVariants with TimeVariants {
+  private[test] val deterministic = FiberRef.unsafe.make(true)(Unsafe.unsafe)
+
+  def dual[R, A](
+    deterministic: => Gen[R, A],
+    nondeterministic: => Gen[R, A]
+  )(implicit trace: Trace): Gen[R, A] =
+    Gen(ZStream.unwrap(Gen.deterministic.get.map(if (_) deterministic.sample else nondeterministic.sample)))
 
   /**
    * A generator of alpha characters.
@@ -241,9 +251,6 @@ object Gen extends GenZIO with FunctionVariants with TimeVariants {
    * A generator of [[java.math.BigDecimal]] inside the specified range: [start,
    * end]. The shrinker will shrink toward the lower end of the range
    * ("smallest").
-   *
-   * The values generated will have a precision equal to the precision of the
-   * difference between `max` and `min`.
    * @see
    *   See [[bigDecimal]] for implementation.
    */
@@ -446,7 +453,30 @@ object Gen extends GenZIO with FunctionVariants with TimeVariants {
     as: Iterable[A],
     shrinker: A => ZStream[R, Nothing, A] = defaultShrinker
   )(implicit trace: Trace): Gen[R, A] =
-    Gen(ZStream.fromIterable(as).map(a => Sample.unfold(a)(a => (a, shrinker(a)))))
+    Gen.dual(
+      Gen(ZStream.fromIterable(as).map(a => Sample.unfold(a)(a => (a, shrinker(a))))),
+      Gen.suspend {
+        val knownSize = as.knownSize
+        def select(index: Int): A = {
+          val iterator = as.iterator
+          var current  = iterator.next()
+          var i        = 0
+          while (i < index && iterator.hasNext) {
+            current = iterator.next()
+            i += 1
+          }
+          current
+        }
+
+        if (knownSize == 0) Gen.empty
+        else if (knownSize > 0) Gen.int(0, knownSize - 1).map(select)
+        else {
+          val iterator = as.iterator
+          if (!iterator.hasNext) Gen.empty
+          else Gen.sized(size => Gen.int(0, size max 0).map(select))
+        }
+      }
+    )
 
   /**
    * Constructs a generator from a function that uses randomness. The returned
