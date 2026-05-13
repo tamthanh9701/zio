@@ -672,6 +672,28 @@ object GenSpec extends ZIOBaseSpec {
       val actual     = exhaustive.zipWith(exhaustive)(_ + _)
       checkFinite(actual)(equalTo(expected))
     },
+    test("issue9101 fromIterable does not freeze earlier random samples") {
+      val gen = for {
+        id <- Gen.uuid
+        _  <- Gen.fromIterable(LazyList.iterate(0)(_ + 1))
+      } yield id
+
+      assertZIO(gen.runCollectN(3).map(_.toSet))(hasSize(equalTo(3)))
+    } @@ TestAspect.withLiveRandom,
+    test("issue9101 checkN resamples random values after fromIterable") {
+      val gen = for {
+        id <- Gen.uuid
+        _  <- Gen.fromIterable(LazyList.iterate(0)(_ + 1))
+      } yield id
+
+      for {
+        seen <- Ref.make(Set.empty[java.util.UUID])
+        _ <- CheckN(3)(gen) { id =>
+               seen.update(_ + id).as(assertCompletes)
+             }
+        values <- seen.get
+      } yield assert(values)(hasSize(equalTo(3)))
+    } @@ TestAspect.withLiveRandom,
     test("size can be modified locally") {
       val getSize = Gen.size.sample.map(_.value).runCollect.map(_.head)
       val result = for {
