@@ -398,7 +398,7 @@ package object test extends CompileVariants {
     sourceLocation: SourceLocation,
     trace: Trace
   ): ZIO[checkConstructor.OutEnvironment, checkConstructor.OutError, TestResult] =
-    TestConfig.samples.flatMap(n => checkStream(rv.sample.forever.take(n.toLong))(a => checkConstructor(test(a))))
+    TestConfig.samples.flatMap(n => checkStream(rv.samples(Some(n)))(a => checkConstructor(test(a))))
 
   /**
    * A version of `check` that accepts two random variables.
@@ -524,7 +524,7 @@ package object test extends CompileVariants {
     sourceLocation: SourceLocation,
     trace: Trace
   ): ZIO[checkConstructor.OutEnvironment, checkConstructor.OutError, TestResult] =
-    checkStream(rv.sample)(a => checkConstructor(test(a)))
+    checkStream(rv.samples(None))(a => checkConstructor(test(a)))
 
   /**
    * A version of `checkAll` that accepts two random variables.
@@ -553,7 +553,12 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAll` that accepts four random variables.
    */
-  def checkAll[R <: ZAny, A, B, C, D, In](rv1: Gen[R, A], rv2: Gen[R, B], rv3: Gen[R, C], rv4: Gen[R, D])(
+  def checkAll[R <: ZAny, A, B, C, D, In](
+    rv1: Gen[R, A],
+    rv2: Gen[R, B],
+    rv3: Gen[R, C],
+    rv4: Gen[R, D]
+  )(
     test: (A, B, C, D) => In
   )(implicit
     checkConstructor: CheckConstructor[R, In],
@@ -622,7 +627,7 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAll` that accepts eight random variables.
    */
-  def checkAll[R <: ZAny, E, A, B, C, D, F, G, H, I, In](
+  def checkAll[R <: ZAny, A, B, C, D, F, G, H, I, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
@@ -641,23 +646,20 @@ package object test extends CompileVariants {
     checkAll(rv1 <*> rv2 <*> rv3 <*> rv4 <*> rv5 <*> rv6 <*> rv7 <*> rv8)(test.tupled)
 
   /**
-   * Checks in parallel the effectual test passes for all values from the given
-   * random variable. This is useful for deterministic `Gen` that
-   * comprehensively explore all possibilities in a given domain.
+   * Checks in parallel the test passes for all values from the given finite,
+   * deterministic generator.
    */
-  def checkAllPar[R <: ZAny, E, A, In](rv: Gen[R, A], parallelism: Int)(
-    test: A => In
-  )(implicit
+  def checkAllPar[R <: ZAny, A, In](rv: Gen[R, A], parallelism: Int)(test: A => In)(implicit
     checkConstructor: CheckConstructor[R, In],
     sourceLocation: SourceLocation,
     trace: Trace
   ): ZIO[checkConstructor.OutEnvironment, checkConstructor.OutError, TestResult] =
-    checkStreamPar(rv.sample, parallelism)(a => checkConstructor(test(a)))
+    checkStreamPar(rv.samples(None), parallelism)(a => checkConstructor(test(a)))
 
   /**
    * A version of `checkAllPar` that accepts two random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, In](rv1: Gen[R, A], rv2: Gen[R, B], parallelism: Int)(
+  def checkAllPar[R <: ZAny, A, B, In](rv1: Gen[R, A], rv2: Gen[R, B], parallelism: Int)(
     test: (A, B) => In
   )(implicit
     checkConstructor: CheckConstructor[R, In],
@@ -669,12 +671,7 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAllPar` that accepts three random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, In](
-    rv1: Gen[R, A],
-    rv2: Gen[R, B],
-    rv3: Gen[R, C],
-    parallelism: Int
-  )(
+  def checkAllPar[R <: ZAny, A, B, C, In](rv1: Gen[R, A], rv2: Gen[R, B], rv3: Gen[R, C], parallelism: Int)(
     test: (A, B, C) => In
   )(implicit
     checkConstructor: CheckConstructor[R, In],
@@ -686,15 +683,13 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAllPar` that accepts four random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, D, In](
+  def checkAllPar[R <: ZAny, A, B, C, D, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
     rv4: Gen[R, D],
     parallelism: Int
-  )(
-    test: (A, B, C, D) => In
-  )(implicit
+  )(test: (A, B, C, D) => In)(implicit
     checkConstructor: CheckConstructor[R, In],
     sourceLocation: SourceLocation,
     trace: Trace
@@ -704,7 +699,7 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAllPar` that accepts five random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, D, F, In](
+  def checkAllPar[R <: ZAny, A, B, C, D, F, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
@@ -723,7 +718,7 @@ package object test extends CompileVariants {
   /**
    * A version of `checkAllPar` that accepts six random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, D, F, G, In](
+  def checkAllPar[R <: ZAny, A, B, C, D, F, G, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
@@ -741,9 +736,9 @@ package object test extends CompileVariants {
     checkAllPar(rv1 <*> rv2 <*> rv3 <*> rv4 <*> rv5 <*> rv6, parallelism)(test.tupled)
 
   /**
-   * A version of `checkAllPar` that accepts six random variables.
+   * A version of `checkAllPar` that accepts seven random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, D, F, G, H, In](
+  def checkAllPar[R <: ZAny, A, B, C, D, F, G, H, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
@@ -762,9 +757,9 @@ package object test extends CompileVariants {
     checkAllPar(rv1 <*> rv2 <*> rv3 <*> rv4 <*> rv5 <*> rv6 <*> rv7, parallelism)(test.tupled)
 
   /**
-   * A version of `checkAllPar` that accepts six random variables.
+   * A version of `checkAllPar` that accepts eight random variables.
    */
-  def checkAllPar[R <: ZAny, E, A, B, C, D, F, G, H, I, In](
+  def checkAllPar[R <: ZAny, A, B, C, D, F, G, H, I, In](
     rv1: Gen[R, A],
     rv2: Gen[R, B],
     rv3: Gen[R, C],
@@ -800,7 +795,7 @@ package object test extends CompileVariants {
     trace: Trace
   ): ZIO[checkConstructor.OutEnvironment, checkConstructor.OutError, TestResult] =
     TestConfig.samples.flatMap(n =>
-      checkStreamPar(rv.sample.forever.take(n.toLong), parallelism)(a => checkConstructor(test(a)))
+      checkStreamPar(rv.samples(Some(n)), parallelism)(a => checkConstructor(test(a)))
     )
 
   /**
@@ -1009,7 +1004,7 @@ package object test extends CompileVariants {
         checkConstructor: CheckConstructor[R, In],
         trace: Trace
       ): ZIO[checkConstructor.OutEnvironment, checkConstructor.OutError, TestResult] =
-        checkStream(rv.sample.forever.take(n.toLong))(a => checkConstructor(test(a)))
+        checkStream(rv.samples(Some(n)))(a => checkConstructor(test(a)))
       def apply[R <: ZAny, A, B, In](rv1: Gen[R, A], rv2: Gen[R, B])(
         test: (A, B) => In
       )(implicit
